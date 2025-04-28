@@ -39,7 +39,10 @@ mod time {
     };
 }
 
+mod random;
+
 pub use self::mem::*;
+pub use self::random::*;
 pub use self::stdio::*;
 pub use self::task::*;
 pub use self::time::*;

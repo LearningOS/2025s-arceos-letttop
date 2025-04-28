@@ -1,5 +1,4 @@
-use arceos_api::modules::axhal::misc::random;
-
+use crate::rand::random;
 use crate::string::String;
 use crate::vec::Vec;
 use core::hash::{BuildHasher, Hasher};

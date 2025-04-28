@@ -403,3 +403,11 @@ pub mod modules {
     #[cfg(feature = "multitask")]
     pub use axtask;
 }
+
+/// Random number generation.
+pub mod random {
+    define_api! {
+        /// Returns a random u128 value.
+        pub fn random() -> u128;
+    }
+}

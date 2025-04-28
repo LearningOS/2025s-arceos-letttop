@@ -60,6 +60,9 @@ pub use alloc::{boxed, format, string, vec};
 #[cfg(feature = "alloc")]
 pub mod collections;
 
+#[cfg(feature = "alloc")]
+pub mod rand;
+
 #[doc(no_inline)]
 pub use core::{arch, cell, cmp, hint, marker, mem, ops, ptr, slice, str};
 
