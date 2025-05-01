@@ -1,5 +1,6 @@
 use std::fs::{self, File, FileType};
 use std::io::{self, prelude::*};
+use std::string::ToString;
 use std::{string::String, vec::Vec};
 
 #[cfg(all(not(feature = "axstd"), unix))]
@@ -27,6 +28,8 @@ const CMD_TABLE: &[(&str, CmdHandler)] = &[
     ("pwd", do_pwd),
     ("rm", do_rm),
     ("uname", do_uname),
+    ("rename", do_rename),
+    ("mv", do_mv),
 ];
 
 fn file_type_to_char(ty: FileType) -> char {
@@ -223,6 +226,79 @@ fn do_rm(args: &str) {
             print_err!("rm", format_args!("cannot remove '{path}'"), e);
         }
     }
+}
+
+fn do_rename(args: &str) {
+    //old: &str, new: &str
+
+    if args.is_empty() {
+        print_err!("rename", "need old and new path");
+        return;
+    }
+
+    let (old, new) = split_whitespace(args);
+
+    if old.is_empty() || new.is_empty() {
+        print_err!("rename", "missing path string");
+        return;
+    }
+
+    if let Err(e) = fs::rename(old, new) {
+        print_err!("rename", "cannot rename {old} to {new}: '{path}'", e);
+    }
+}
+
+fn do_mv(args: &str) {
+    //old: &str, new: &str
+
+    if args.is_empty() {
+        print_err!("mv", "need old and new path");
+        return;
+    }
+
+    let (old, new) = split_whitespace(args);
+
+    if old.is_empty() || new.is_empty() {
+        print_err!("mv", "missing path string");
+        return;
+    }
+
+    let mut new_file;
+    if let Ok(metadata) = fs::metadata(new) {
+        // must be a existed dir
+        if metadata.is_dir() {
+            if new.ends_with("/") {
+                let new_path = new.to_string() + old;
+                new_file = File::create(&new_path).unwrap();
+            } else {
+                let new_path = new.to_string() + "/" + old;
+                new_file = File::create(&new_path).unwrap();
+            }
+        } else {
+            print_err!("mv", "file already exist");
+            return;
+        }
+    } else {
+        // must be a new file
+        new_file = File::create(new).unwrap();
+    }
+
+    // create new file and write buf
+    // 判断是否文件夹
+    // 文件夹是否存在并
+
+    // read old file and write to new file
+    let mut buf = [0; 1024];
+    let mut old_file = File::open(old).unwrap();
+    let n = old_file.read(&mut buf).unwrap();
+    if n > 0 {
+        new_file.write_all(&buf[..n]);
+    } else {
+        print_err!("mv", "mv failed");
+    }
+
+    // delete old file
+    fs::remove_file(old);
 }
 
 fn do_cd(mut args: &str) {
