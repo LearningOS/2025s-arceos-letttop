@@ -3,28 +3,28 @@
 #![feature(asm_const)]
 #![feature(riscv_ext_intrinsics)]
 
+extern crate alloc;
 #[cfg(feature = "axstd")]
 extern crate axstd as std;
-extern crate alloc;
 #[macro_use]
 extern crate axlog;
 
+mod csrs;
+mod loader;
+mod regs;
+mod sbi;
 mod task;
 mod vcpu;
-mod regs;
-mod csrs;
-mod sbi;
-mod loader;
 
-use vcpu::VmCpuRegisters;
-use riscv::register::{scause, sstatus};
-use csrs::defs::hstatus;
-use tock_registers::LocalRegisterCopy;
-use csrs::{RiscvCsrTrait, CSR};
-use vcpu::_run_guest;
-use sbi::SbiMessage;
-use loader::load_vm_image;
 use axhal::mem::PhysAddr;
+use csrs::defs::hstatus;
+use csrs::{RiscvCsrTrait, CSR};
+use loader::load_vm_image;
+use riscv::register::{scause, sstatus};
+use sbi::SbiMessage;
+use tock_registers::LocalRegisterCopy;
+use vcpu::VmCpuRegisters;
+use vcpu::_run_guest;
 
 const VM_ENTRY: usize = 0x8020_0000;
 
@@ -67,6 +67,7 @@ fn prepare_vm_pgtable(ept_root: PhysAddr) {
 
 fn run_guest(ctx: &mut VmCpuRegisters) {
     unsafe {
+        // 这里会进入VS模式
         _run_guest(ctx);
     }
 
@@ -78,20 +79,25 @@ fn vmexit_handler(ctx: &VmCpuRegisters) {
 
     let scause = scause::read();
     match scause.cause() {
+        // 在VS模式下触发trap，退到HS处理
+        // 会跳到_run_guest 里la t1, _guest_exit; csrrw t1, stvec, t1
+        // 设置的_guest_exit，来设置上下文
+        // 下面会处理这个上下文
         Trap::Exception(Exception::VirtualSupervisorEnvCall) => {
             let sbi_msg = SbiMessage::from_regs(ctx.guest_regs.gprs.a_regs()).ok();
             ax_println!("VmExit Reason: VSuperEcall: {:?}", sbi_msg);
             if let Some(msg) = sbi_msg {
                 match msg {
                     SbiMessage::Reset(_) => {
+                        // 这里也没有触发SBI，仅仅是打印了一句话？
                         ax_println!("Shutdown vm normally!");
-                    },
+                    }
                     _ => todo!(),
                 }
             } else {
                 panic!("bad sbi message! ");
             }
-        },
+        }
         _ => {
             panic!(
                 "Unhandled trap: {:?}, sepc: {:#x}, stval: {:#x}",
@@ -105,9 +111,8 @@ fn vmexit_handler(ctx: &VmCpuRegisters) {
 
 fn prepare_guest_context(ctx: &mut VmCpuRegisters) {
     // Set hstatus
-    let mut hstatus = LocalRegisterCopy::<usize, hstatus::Register>::new(
-        riscv::register::hstatus::read().bits(),
-    );
+    let mut hstatus =
+        LocalRegisterCopy::<usize, hstatus::Register>::new(riscv::register::hstatus::read().bits());
     // Set Guest bit in order to return to guest mode.
     hstatus.modify(hstatus::spv::Guest);
     // Set SPVP bit in order to accessing VS-mode memory from HS-mode.
