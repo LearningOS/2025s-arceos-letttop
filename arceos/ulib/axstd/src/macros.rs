@@ -16,12 +16,12 @@ macro_rules! print {
 /// Prints to the standard output, with a newline.
 #[macro_export]
 macro_rules! println {
-    () => { $crate::print!("\u{1B}[34m\n\u{1B}[m") };
+    () => { $crate::print!("\n") };
     ($($arg:tt)*) => {
         // "\u{1B}[34m" sets text color to blue (ANSI escape code),
         // "{}" is for formatted content,
         // "\n" for newline,
         // "\u{1B}[m" resets color to default.
-        $crate::io::__print_impl(format_args!("\u{1B}[34m{}\n\u{1B}[m", format_args!($($arg)*)));
+        $crate::io::__print_impl(format_args!("{}\n", format_args!($($arg)*)));
     }
 }
