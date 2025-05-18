@@ -3,6 +3,7 @@
 //! The implementation is based on [`axfs_vfs`].
 
 #![cfg_attr(not(test), no_std)]
+#![feature(str_split_remainder)]
 
 extern crate alloc;
 
