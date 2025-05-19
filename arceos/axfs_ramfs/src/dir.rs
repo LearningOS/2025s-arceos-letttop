@@ -173,63 +173,84 @@ impl VfsNodeOps for DirNode {
     ///
     /// This only works then the new path is in the same mounted fs.
     fn rename(&self, old: &str, new: &str) -> VfsResult {
-        log::info!("rename {} to {}", old, new);
-        // rename /f1 to /tmp/f2 ?????????
-
-        let a = Arc::as_ptr(&self.this.upgrade().unwrap());
-        log::info!("old_parent_node ptr = {:p}", a);
+        // log::info!("rename {} to {}", old, new);
+        // rename /f1 to /tmp/f2
 
         let old_parent_node = self.this.upgrade().unwrap().clone();
+        let a = Arc::as_ptr(&self.this.upgrade().unwrap());
+        log::info!("the mainfs root dir is at = {:p}", a);
+        for (name, _node) in old_parent_node.children.read().iter() {
+            log::info!("the mainfs root dir has child:  {}", name);
+        }
+
         let root: VfsNodeRef = {
             let mut current: VfsNodeRef = old_parent_node.clone();
+
             while let Some(parent) = current.parent() {
                 current = parent;
             }
             current
         };
 
+        let c = root.clone();
+        let c = Arc::as_ptr(&c);
+        log::info!("look up root is at {:p}", c);
+        for (name, _node) in root
+            .as_any()
+            .downcast_ref::<DirNode>()
+            .unwrap()
+            .children
+            .read()
+            .iter()
+        {
+            log::info!("look up root has child:  {}", name);
+        }
+
         let (new_dir_path, new_file_name) = split_path(new);
-        log::info!(
-            "rename: new_dir_path: {}, new_file_name: {:#?}",
-            new_dir_path,
-            new_file_name
-        );
+        // log::info!(
+        //     "rename: new_dir_path: {}, new_file_name: {:#?}",
+        //     new_dir_path,
+        //     new_file_name
+        // );
         let (path1, path2) = split_path(old);
-        log::info!("rename: old_dir_path {}, old_file_name {:#?}", path1, path2);
+        // log::info!("rename: old_dir_path {}, old_file_name {:#?}", path1, path2);
         let old_file_name = match path2 {
             Some(name) => name,
             None => path1,
         };
-        log::info!("rename: , old_file_name {:#?}", old_file_name);
+        // log::info!("rename: , old_file_name {:#?}", old_file_name);
 
         // 删除原来的文件
         let move_node = old_parent_node
             .clone()
             .lookup(old_file_name)
             .expect("old file not find");
-        log::info!("rename: remove {}", old_file_name);
+        let b = Arc::as_ptr(&move_node);
+        log::info!("old file is at = {:p}", b);
 
         //
         let new_parent_node = root
             .clone()
             .lookup(new_dir_path)
             .expect("get dir node failed, may have wrong new name");
-        let new_parent_node: Arc<DirNode> = new_parent_node
+        let b = Arc::as_ptr(&new_parent_node);
+        log::info!("dir of new file is at = {:p}", b);
+        for (name, _node) in new_parent_node
             .as_any()
             .downcast_ref::<DirNode>()
-            .expect("not a dir node")
-            .this
-            .upgrade()
-            .unwrap();
-        log::info!("rename: get new_parent_node {}", new_dir_path);
+            .unwrap()
+            .children
+            .read()
+            .iter()
+        {
+            log::info!("look up root has child:  {}", name);
+        }
 
         // ?????????
         // [  0.413366 0 axfs_ramfs::dir:219] old_parent_node ptr = 0xffffffc080287820
         // [  0.415143 0 axfs_ramfs::dir:220] new_parent_node ptr = 0xffffffc0802878c0
-        let a = Arc::as_ptr(&old_parent_node);
-        let b = Arc::as_ptr(&new_parent_node);
-        log::info!("old_parent_node ptr = {:p}", a);
-        log::info!("new_parent_node ptr = {:p}", b);
+        // let a = Arc::as_ptr(&old_parent_node);
+        // log::info!("old_parent_node ptr = {:p}", a);
 
         //
         old_parent_node
