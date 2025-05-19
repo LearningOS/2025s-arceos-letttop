@@ -165,9 +165,6 @@ impl VfsNodeOps for DirNode {
         }
     }
 
-    // test use std::fs::rename directly, move shell rename to here
-    // parent_node_of(None, old).rename(old, new)
-    // so self here is parent node
     /// Rename a file or directory to a new name.
     /// Delete the original file if `old` already exists.
     ///
@@ -176,91 +173,41 @@ impl VfsNodeOps for DirNode {
         // log::info!("rename {} to {}", old, new);
         // rename /f1 to /tmp/f2
 
-        let old_parent_node = self.this.upgrade().unwrap().clone();
-        let a = Arc::as_ptr(&self.this.upgrade().unwrap());
-        log::info!("the mainfs root dir is at = {:p}", a);
-        for (name, _node) in old_parent_node.children.read().iter() {
-            log::info!("the mainfs root dir has child:  {}", name);
-        }
-
-        let root: VfsNodeRef = {
-            let mut current: VfsNodeRef = old_parent_node.clone();
-
-            while let Some(parent) = current.parent() {
-                current = parent;
-            }
-            current
-        };
-
-        let c = root.clone();
-        let c = Arc::as_ptr(&c);
-        log::info!("look up root is at {:p}", c);
-        for (name, _node) in root
-            .as_any()
-            .downcast_ref::<DirNode>()
-            .unwrap()
-            .children
-            .read()
-            .iter()
-        {
-            log::info!("look up root has child:  {}", name);
-        }
-
-        let (new_dir_path, new_file_name) = split_path(new);
-        // log::info!(
-        //     "rename: new_dir_path: {}, new_file_name: {:#?}",
-        //     new_dir_path,
-        //     new_file_name
-        // );
-        let (path1, path2) = split_path(old);
-        // log::info!("rename: old_dir_path {}, old_file_name {:#?}", path1, path2);
-        let old_file_name = match path2 {
-            Some(name) => name,
-            None => path1,
-        };
-        // log::info!("rename: , old_file_name {:#?}", old_file_name);
-
-        // 删除原来的文件
-        let move_node = old_parent_node
-            .clone()
-            .lookup(old_file_name)
-            .expect("old file not find");
-        let b = Arc::as_ptr(&move_node);
-        log::info!("old file is at = {:p}", b);
-
+        // 对于本ramfs来说，就是挂载在/tmp下的
+        // 以/tmp开始的就是绝对地址，取之后的
+        // 以/其他开始的是错误
+        // 其他为相对地址或文件
         //
-        let new_parent_node = root
-            .clone()
-            .lookup(new_dir_path)
-            .expect("get dir node failed, may have wrong new name");
-        let b = Arc::as_ptr(&new_parent_node);
-        log::info!("dir of new file is at = {:p}", b);
-        for (name, _node) in new_parent_node
-            .as_any()
-            .downcast_ref::<DirNode>()
-            .unwrap()
-            .children
-            .read()
-            .iter()
-        {
-            log::info!("look up root has child:  {}", name);
-        }
+        // 直接以self为root即可
 
-        // ?????????
-        // [  0.413366 0 axfs_ramfs::dir:219] old_parent_node ptr = 0xffffffc080287820
-        // [  0.415143 0 axfs_ramfs::dir:220] new_parent_node ptr = 0xffffffc0802878c0
-        // let a = Arc::as_ptr(&old_parent_node);
-        // log::info!("old_parent_node ptr = {:p}", a);
+        let ramfs_root_dir_node = self.this.upgrade().unwrap().clone();
 
-        //
-        old_parent_node
+        let (old_dir_path, old_file_name) = parse_path(old);
+        let (new_dir_path, new_file_name) = parse_path(new);
+
+        let old_dir_node = ramfs_root_dir_node.clone().lookup(&old_dir_path).unwrap();
+        let new_dir_node = ramfs_root_dir_node.clone().lookup(&new_dir_path).unwrap();
+
+        // 删除原来的文件，即从原父节点的children列表去掉
+        let move_node = old_dir_node
             .as_any()
             .downcast_ref::<DirNode>()
             .expect("not a dir node")
             .children
             .write()
-            .insert(new_file_name.unwrap().into(), move_node.clone());
-        log::info!("rename: add new_file_name {:?}", new_file_name);
+            .remove(&old_file_name)
+            .ok_or(VfsError::NotFound)
+            .expect("old file not find");
+
+        // 加入新父节点的children列表
+        new_dir_node
+            .as_any()
+            .downcast_ref::<DirNode>()
+            .expect("not a dir node")
+            .children
+            .write()
+            .insert(new_file_name, move_node.clone());
+
         Ok(())
     }
 
@@ -280,4 +227,43 @@ fn split_path(path: &str) -> (&str, Option<&str>) {
     trimmed_path.find('/').map_or((trimmed_path, None), |n| {
         (&trimmed_path[..n], Some(&trimmed_path[n + 1..]))
     })
+}
+
+/// Parse a path into (directory_path, file_name) tuple.
+/// Examples:
+/// - "/f1" -> ("", "f1")
+/// - "/tmp/f1" -> ("", "f1") if tmp is root
+/// - "/tmp/dir1/f1" -> ("dir1", "f1")
+/// - "f1" -> ("", "f1")
+fn parse_path(path: &str) -> (String, String) {
+    let path = path.trim_start_matches('/');
+
+    // Handle empty path
+    if path.is_empty() {
+        return (String::new(), String::new());
+    }
+
+    let parts: Vec<&str> = path.split('/').collect();
+
+    match parts.len() {
+        0 => (String::new(), String::new()),
+        1 => (String::new(), parts[0].into()),
+        _ => {
+            if parts[0] == "tmp" {
+                // Remove "tmp" prefix if present
+                match parts.len() {
+                    2 => (String::new(), parts[1].into()),
+                    _ => {
+                        let dir_path: String = parts[1..parts.len() - 1].join("/").into();
+                        let file_name: String = parts.last().map(|&s| s.into()).unwrap_or_default();
+                        (dir_path, file_name)
+                    }
+                }
+            } else {
+                let dir_path: String = parts[..parts.len() - 1].join("/").into();
+                let file_name: String = parts.last().map(|&s| s.into()).unwrap_or_default();
+                (dir_path, file_name)
+            }
+        }
+    }
 }
